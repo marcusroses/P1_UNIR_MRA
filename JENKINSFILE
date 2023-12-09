@@ -16,30 +16,34 @@ pipeline{
                 bat 'dir'
             }
         }
-        
-        stage('Unit'){
-            steps{
-                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE'){
-                    bat '''
-                        set PYTONPATH=%WORKSPACE%
-                        python -m pytest --junitxml=result-unit.xml test\\unit
-                    '''
-                }
+
+        stage('Tests') {           
+            parallel {        
+                stage('Unit'){
+                    steps{
+                        catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE'){
+                            bat '''
+                                set PYTONPATH=%WORKSPACE%
+                                python -m pytest --junitxml=result-unit.xml test\\unit
+                            '''
+                        }
+                    }
+                } 
+                
+                stage('Rest'){
+                    steps{
+                        bat '''
+                            set FLASK_APP=app\\api.py
+                            set FLASK_ENV=development
+                            start python -m flask run
+                            start java -jar C:\\CODI\\unir\\P1\\wiremock\\wiremock-standalone-3.3.1.jar --port 9090 --root-dir C:\\CODI\\unir\\P1\\test\\wiremock
+                            set PYTONPATH=%WORKSPACE%   
+                            python -m pytest --junitxml=result-rest.xml test\\rest
+                        '''
+                    }
+                } 
             }
-        } 
-        
-        stage('Rest'){
-            steps{
-                bat '''
-                    set FLASK_APP=app\\api.py
-                    set FLASK_ENV=development
-                    start python -m flask run
-                    start java -jar C:\\CODI\\unir\\P1\\wiremock\\wiremock-standalone-3.3.1.jar --port 9090 --root-dir C:\\CODI\\unir\\P1\\test\\wiremock
-                    set PYTONPATH=%WORKSPACE%   
-                    python -m pytest --junitxml=result-rest.xml test\\rest
-                '''
-            }
-        }         
+        }
 
         stage('Results'){
             steps{
