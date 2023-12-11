@@ -1,0 +1,81 @@
+pipeline{
+    agent none
+    
+    stages{
+        stage('Get Code'){
+            agent {label 'git'}
+            steps{
+                bat '''
+                    hostname
+                    whoami
+                '''
+                //Obtener código del repo
+                git 'https://github.com/marcusroses/P1_UNIR_MRA'
+                stash includes: '*', name: 'sourceFiles'
+            }
+        }
+
+        stage('Build'){
+            agent {label 'python'}
+            steps{
+                bat '''
+                    hostname
+                    whoami
+                '''
+                echo 'Eyyyy, esto es Python y no hay que compilar nada'
+                echo WORKSPACE
+                bat 'dir'
+            }
+        }
+
+        stage('Unit'){
+            agent {label 'python'}
+            steps{
+                bat '''
+                    hostname
+                    whoami
+                '''
+                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE'){
+                    unstash 'sourceFiles'
+                    stash includes: '*', name: 'testFiles'
+                    bat '''
+                        set PYTONPATH=%WORKSPACE%
+                        python -m pytest --junitxml=rest-files\\result-unit.xml test\\unit
+                    '''
+                }
+            }
+        } 
+                
+        stage('Rest'){
+            agent {label 'python'}
+            steps{
+                bat '''
+                    hostname
+                    whoami
+                '''
+                unstash 'sourceFiles'
+                stash includes: '*', name: 'testFiles'                
+                bat '''
+                    set FLASK_APP=app\\api.py
+                    set FLASK_ENV=development
+                    start python -m flask run
+                    start java -jar C:\\CODI\\unir\\P1\\wiremock\\wiremock-standalone-3.3.1.jar --port 9090 --root-dir C:\\CODI\\unir\\P1\\test\\wiremock
+                    set PYTONPATH=%WORKSPACE%   
+                    python -m pytest --junitxml=result-rest.xml test\\rest
+                '''
+            }
+        } 
+
+        stage('Results'){
+            agent {label 'jenkins'}
+            steps{
+                bat '''
+                    hostname
+                    whoami
+                '''
+                unstash 'testFiles'
+                junit 'result*.xml'
+            }
+        }         
+    }    
+}
