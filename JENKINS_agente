@@ -1,5 +1,5 @@
 pipeline{
-    agent none
+    agent any
     
     stages{
         stage('Get Code'){
@@ -11,20 +11,6 @@ pipeline{
                 '''
                 //Obtener código del repo
                 git 'https://github.com/marcusroses/P1_UNIR_MRA'
-                stash includes: '*', name: 'sourceFiles'
-            }
-        }
-
-        stage('Build'){
-            agent {label 'python'}
-            steps{
-                bat '''
-                    hostname
-                    whoami
-                '''
-                echo 'Eyyyy, esto es Python y no hay que compilar nada'
-                echo WORKSPACE
-                bat 'dir'
             }
         }
 
@@ -35,17 +21,16 @@ pipeline{
                     hostname
                     whoami
                 '''
-                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE'){
-                    unstash 'sourceFiles'
-                    stash includes: '*', name: 'testFiles'
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     bat '''
                         set PYTONPATH=%WORKSPACE%
-                        python -m pytest --junitxml=rest-files\\result-unit.xml test\\unit
+                        python -m pytest --junitxml=result-unit.xml test\\unit
                     '''
+                    junit 'result*.xml'
                 }
             }
         } 
-                
+        
         stage('Rest'){
             agent {label 'python'}
             steps{
@@ -53,29 +38,89 @@ pipeline{
                     hostname
                     whoami
                 '''
-                unstash 'sourceFiles'
-                stash includes: '*', name: 'testFiles'                
                 bat '''
                     set FLASK_APP=app\\api.py
                     set FLASK_ENV=development
                     start python -m flask run
-                    start java -jar C:\\CODI\\unir\\P1\\wiremock\\wiremock-standalone-3.3.1.jar --port 9090 --root-dir C:\\CODI\\unir\\P1\\test\\wiremock
+                    start java -jar C:\\CODI\\unir\\P1_B\\wiremock\\wiremock-standalone-3.3.1.jar --port 9090 --root-dir C:\\CODI\\unir\\P1_B\\test\\wiremock
                     set PYTONPATH=%WORKSPACE%   
                     python -m pytest --junitxml=result-rest.xml test\\rest
                 '''
             }
-        } 
+        }
 
-        stage('Results'){
-            agent {label 'jenkins'}
+
+
+
+        
+        stage('Coverage'){
+            agent {label 'python'}
             steps{
                 bat '''
                     hostname
                     whoami
                 '''
-                unstash 'testFiles'
-                junit 'result*.xml'
-            }
-        }         
+                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                    bat '''
+                    set PYTONPATH=%WORKSPACE%
+                    python -m coverage run --branch --source=app --omit=app\\__init__.py,app\\api.py -m pytest test\\unit"
+                    python -m coverage xml
+                    '''
+                    cobertura coberturaReportFile: 'coverage.xml', conditionalCoverageTargets: '90, 80, 0', lineCoverageTargets: '95, 85, 0'
+                }                
+            }            
+        }        
+        
+        stage('Static'){
+            agent {label 'python'}
+            steps{
+                bat '''
+                    hostname
+                    whoami
+                '''
+                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                    bat '''
+                    set PYTONPATH=%WORKSPACE%
+                    python -m flake8 --exit-zero --format=pylint app>flake8.out
+                    '''
+                    recordIssues tools: [flake8(name: 'Flake8', pattern: 'flake8.out')], qualityGates: [[threshold: 8, type: 'TOTAL', unstable: true], [threshold: 10, type: 'TOTAL', unstable: false]]
+                }
+            }            
+        }      
+        
+        stage('Performace'){
+            agent {label 'git'}
+            steps{
+                bat '''
+                    hostname
+                    whoami
+                '''
+                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                    bat '''
+                    C:\\CODI\\UNIR\\apache-jmeter-5.6.3\\bin\\jmeter -n -t test\\jmeter\\P1_B.jmx -f -l flask.jtl
+                    '''
+                    perfReport sourceDataFiles: 'flask.jtl'
+                }
+            }            
+        }        
+                
+        
+        stage('Security'){
+            agent {label 'python'}
+            steps{
+                bat '''
+                    hostname
+                    whoami
+                '''
+                catchError() {
+                    bat '''
+                    set PYTONPATH=%WORKSPACE%
+                    python -m bandit --exit-zero -r . -f custom -o bandit.out --severity-level medium --msg-template "{abspath}:{line}: {severity}: {test_id}: {msg}"
+                    '''
+                    recordIssues tools: [pyLint(name: 'Bandit', pattern: 'bandit.out')], qualityGates: [[threshold: 2, type: 'TOTAL', unstable: true], [threshold: 4, type: 'TOTAL', unstable: false]]
+                }
+            }            
+        }  
+        
     }    
 }
